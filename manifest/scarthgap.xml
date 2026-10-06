@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<manifest>
+
+```
+<!-- Yocto Project / Poky -->
+<remote
+    name="yocto"
+    fetch="https://git.yoctoproject.org/"
+/>
+
+<!-- Raspberry Pi BSP -->
+<remote
+    name="raspberrypi"
+    fetch="https://github.com/agherzan/"
+/>
+
+<!-- Personal project -->
+<remote
+    name="personal"
+    fetch="https://github.com/srmt1/"
+/>
+
+<!--
+    Poky / Yocto Project
+
+    This exact commit currently contains:
+      meta
+      meta-poky
+      meta-yocto-bsp
+      meta-openembedded/meta-oe
+-->
+<project
+    name="poky.git"
+    path="poky"
+    remote="yocto"
+    revision="cbd62bb2a9f2ab3466a0f72f4289bc86ca20a019"
+/>
+
+<!-- Raspberry Pi BSP -->
+<project
+    name="meta-raspberrypi.git"
+    path="meta-raspberrypi"
+    remote="raspberrypi"
+    revision="6ca1f75017cc5d5acdb8bb05634c4bc01fa049fd"
+/>
+
+<!-- Custom project layer -->
+<project
+    name="meta-myboard.git"
+    path="meta-myboard"
+    remote="personal"
+    revision="61fa5bd66ef7d11ff42ad9923757a7dd6afa26b1"
+/>
+```
+
+</manifest>
+
