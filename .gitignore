@@ -1,0 +1,21 @@
+# Yocto build output
+build/
+tmp/
+sstate-cache/
+downloads/
+
+# Editor / OS files
+.vscode/
+.idea/
+*.swp
+*~
+
+# Python
+__pycache__/
+*.pyc
+
+# Build artifacts
+*.o
+*.ko
+*.dtbo
+*.dtb
