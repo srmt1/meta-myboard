@@ -10,9 +10,9 @@
         __overlay__ {
             status = "okay";
 
-            bmp280@76 {
+            bmp280@77 {
                 compatible = "bosch,bmp280";
-                reg = <0x76>;
+                reg = <0x77>;
             };
         };
     };

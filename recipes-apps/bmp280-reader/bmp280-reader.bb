@@ -1,17 +1,13 @@
-SUMMARY = "BMP280 I2C sensor reader"
+SUMMARY = "BMP280 IIO sensor reader"
 LICENSE = "CLOSED"
 
-SRC_URI = "file://bmp280-reader.c \
-           file://sensor_i2c_mutex.c \
-           file://sensor_i2c_mutex.h"
+SRC_URI = "file://bmp280-reader-iio.c"
 
 S = "${WORKDIR}"
 
 do_compile() {
     ${CC} ${CFLAGS} ${LDFLAGS} \
-        ${S}/bmp280-reader.c \
-        ${S}/sensor_i2c_mutex.c \
-        -pthread \
+        ${S}/bmp280-reader-iio.c \
         -o ${B}/bmp280-reader
 }
 
