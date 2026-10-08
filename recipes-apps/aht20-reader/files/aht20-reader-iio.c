@@ -82,9 +82,9 @@ int main(void)
     char device[256];
     char path[256];
     double temperature;
-    double pressure;
+    double humidity;
 
-    if (find_iio_device("bmp280",
+    if (find_iio_device("aht20",
                         device,
                         sizeof(device)) < 0)
         return 1;
@@ -97,18 +97,18 @@ int main(void)
         return 1;
 
     snprintf(path, sizeof(path),
-             "%s/in_pressure_input",
+             "%s/in_humidityrelative_input",
              device);
 
-    if (read_value(path, &pressure) < 0)
+    if (read_value(path, &humidity) < 0)
         return 1;
 
-    printf("BMP280 via IIO\n");
+    printf("AHT20 via IIO\n");
     printf("Temperature: %.3f °C\n",
            temperature / 1000.0);
 
-    printf("Pressure:    %.2f hPa\n",
-           pressure * 10.0);
+    printf("Humidity:    %.3f %%\n",
+           humidity / 1000.0);
 
     return 0;
 }

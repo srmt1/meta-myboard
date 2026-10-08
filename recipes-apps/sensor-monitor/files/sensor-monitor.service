@@ -1,0 +1,14 @@
+[Unit]
+Description=AHT20 and BMP280 sensor monitor
+After=local-fs.target
+Wants=local-fs.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/sensor-monitor
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=10
+
+[Install]
+WantedBy=multi-user.target

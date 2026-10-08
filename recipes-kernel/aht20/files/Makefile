@@ -1,6 +1,9 @@
-obj-m += mydriver.o
+obj-m += aht20.o
 
 all:
+	$(MAKE) -C $(KERNEL_SRC) M=$(PWD) modules
+
+modules:
 	$(MAKE) -C $(KERNEL_SRC) M=$(PWD) modules
 
 modules_install:
@@ -8,4 +11,3 @@ modules_install:
 
 clean:
 	$(MAKE) -C $(KERNEL_SRC) M=$(PWD) clean
-
