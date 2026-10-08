@@ -1,6 +1,8 @@
 SUMMARY = "Combined AHT20 and BMP280 sensor monitor"
 LICENSE = "CLOSED"
 
+DEPENDS += "mosquitto"
+
 inherit systemd
 
 SRC_URI = " \
@@ -14,7 +16,8 @@ S = "${WORKDIR}"
 do_compile() {
     ${CC} ${CFLAGS} ${LDFLAGS} \
         ${S}/sensor-monitor.c \
-        -o ${B}/sensor-monitor
+        -o ${B}/sensor-monitor \
+        -lmosquitto
 }
 
 do_install() {
