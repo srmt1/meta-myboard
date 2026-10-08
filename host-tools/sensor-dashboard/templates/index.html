@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <title>Environmental Sensor Dashboard</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        :root {
+            color-scheme: light;
+            font-family: system-ui, sans-serif;
+            background: #f3f5f8;
+            color: #202938;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+        }
+
+        header {
+            padding: 24px;
+            background: #18283f;
+            color: white;
+        }
+
+        header h1 {
+            margin: 0 0 8px;
+            font-size: 1.7rem;
+        }
+
+        header p {
+            margin: 0;
+            color: #d3deed;
+        }
+
+        main {
+            max-width: 1200px;
+            margin: auto;
+            padding: 24px;
+        }
+
+        .toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .status {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 600;
+        }
+
+        .dot {
+            width: 11px;
+            height: 11px;
+            border-radius: 50%;
+            background: #8a94a4;
+        }
+
+        .online .dot {
+            background: #168653;
+        }
+
+        .stale .dot,
+        .no-data .dot,
+        .unknown .dot,
+        .error .dot {
+            background: #c43d40;
+        }
+
+        select {
+            padding: 10px;
+            border: 1px solid #bbc5d3;
+            border-radius: 8px;
+            background: white;
+            font: inherit;
+        }
+
+        .cards {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .card,
+        .panel {
+            background: white;
+            border: 1px solid #e0e5ec;
+            border-radius: 12px;
+            padding: 20px;
+        }
+
+        .card h2 {
+            margin: 0 0 14px;
+            color: #59677b;
+            font-size: 0.95rem;
+            font-weight: 600;
+        }
+
+        .value {
+            font-size: clamp(1.5rem, 3vw, 2.2rem);
+            font-weight: 700;
+            overflow-wrap: anywhere;
+        }
+
+        .unit {
+            color: #59677b;
+            font-size: 0.9rem;
+        }
+
+        .panel {
+            margin-bottom: 24px;
+        }
+
+        .panel h2 {
+            margin: 0 0 6px;
+            font-size: 1.15rem;
+        }
+
+        .panel p {
+            margin: 0 0 18px;
+            color: #64748b;
+            font-size: 0.9rem;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 280px;
+        }
+
+        #last-updated {
+            color: #64748b;
+            font-size: 0.9rem;
+        }
+
+        #error-message {
+            color: #a3262a;
+            margin-bottom: 16px;
+        }
+
+        @media (max-width: 850px) {
+            .cards {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+
+        @media (max-width: 480px) {
+            main {
+                padding: 14px;
+            }
+
+            header {
+                padding: 20px 14px;
+            }
+
+            .cards {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+
+<body>
+<header>
+    <h1>Environmental Sensor Dashboard</h1>
+    <p>Raspberry Pi · AHT20 · BMP280</p>
+</header>
+
+<main>
+    <div class="toolbar">
+        <div id="connection" class="status unknown">
+            <span class="dot"></span>
+            <span id="connection-text">Checking sensor status…</span>
+        </div>
+
+        <label>
+            History:
+            <select id="history-range">
+                <option value="1">Last hour</option>
+                <option value="6">Last 6 hours</option>
+                <option value="24">Last 24 hours</option>
+                <option value="168">Last 7 days</option>
+            </select>
+        </label>
+    </div>
+
+    <div id="error-message" role="status"></div>
+
+    <section class="cards" aria-label="Latest sensor readings">
+        <article class="card">
+            <h2>AHT20 temperature</h2>
+            <div class="value" id="aht-temp">—</div>
+            <div class="unit">°C</div>
+        </article>
+
+        <article class="card">
+            <h2>Relative humidity</h2>
+            <div class="value" id="humidity">—</div>
+            <div class="unit">% RH</div>
+        </article>
+
+        <article class="card">
+            <h2>BMP280 temperature</h2>
+            <div class="value" id="bmp-temp">—</div>
+            <div class="unit">°C</div>
+        </article>
+
+        <article class="card">
+            <h2>Atmospheric pressure</h2>
+            <div class="value" id="pressure">—</div>
+            <div class="unit">hPa</div>
+        </article>
+    </section>
+
+    <section class="panel">
+        <h2>Temperature history</h2>
+        <p>Comparison between the AHT20 and BMP280.</p>
+        <div class="chart-container">
+            <canvas id="temperature-chart"
+                    aria-label="Historical temperature chart"></canvas>
+        </div>
+    </section>
+
+    <section class="panel">
+        <h2>Relative humidity</h2>
+        <p>AHT20 humidity over the selected period.</p>
+        <div class="chart-container">
+            <canvas id="humidity-chart"
+                    aria-label="Historical humidity chart"></canvas>
+        </div>
+    </section>
+
+    <section class="panel">
+        <h2>Atmospheric pressure</h2>
+        <p>BMP280 pressure over the selected period.</p>
+        <div class="chart-container">
+            <canvas id="pressure-chart"
+                    aria-label="Historical pressure chart"></canvas>
+        </div>
+    </section>
+
+    <p id="last-updated">Waiting for readings…</p>
+</main>
+
+<script>
+    const $ = (id) => document.getElementById(id);
+
+    let temperatureChart;
+    let humidityChart;
+    let pressureChart;
+
+    function makeChart(canvasId, datasets, yTitle) {
+        return new Chart($(canvasId), {
+            type: "line",
+            data: {
+                labels: [],
+                datasets: datasets.map((dataset) => ({
+                    label: dataset.label,
+                    data: [],
+                    borderColor: dataset.color,
+                    backgroundColor: dataset.color,
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    pointHoverRadius: 4,
+                    tension: 0.2,
+                    fill: false
+                }))
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: false,
+                interaction: {
+                    intersect: false,
+                    mode: "index"
+                },
+                scales: {
+                    x: {
+                        ticks: {
+                            maxTicksLimit: 8,
+                            maxRotation: 0
+                        }
+                    },
+                    y: {
+                        title: {
+                            display: true,
+                            text: yTitle
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    temperatureChart = makeChart(
+        "temperature-chart",
+        [
+            { label: "AHT20", color: "#1877c9" },
+            { label: "BMP280", color: "#d97706" }
+        ],
+        "Temperature (°C)"
+    );
+
+    humidityChart = makeChart(
+        "humidity-chart",
+        [
+            { label: "Humidity", color: "#168653" }
+        ],
+        "Relative humidity (%)"
+    );
+
+    pressureChart = makeChart(
+        "pressure-chart",
+        [
+            { label: "Pressure", color: "#7955b3" }
+        ],
+        "Pressure (hPa)"
+    );
+
+    function formatTimestamp(timestamp) {
+        const date = new Date(timestamp);
+
+        if (Number.isNaN(date.getTime())) {
+            return timestamp;
+        }
+
+        return date.toLocaleString();
+    }
+
+    function setStatus(status) {
+        const connection = $("connection");
+
+        connection.className = "status " + status.state;
+        $("connection-text").textContent = status.message;
+
+        if (status.age_seconds !== null) {
+            $("connection-text").textContent +=
+                " · Latest reading " + status.age_seconds + " seconds ago";
+        }
+    }
+
+    function updateCards(latest) {
+        if (!latest) {
+            $("aht-temp").textContent = "—";
+            $("humidity").textContent = "—";
+            $("bmp-temp").textContent = "—";
+            $("pressure").textContent = "—";
+            return;
+        }
+
+        $("aht-temp").textContent =
+            Number(latest.aht20_temperature_c).toFixed(2);
+
+        $("humidity").textContent =
+            Number(latest.aht20_humidity_percent).toFixed(2);
+
+        $("bmp-temp").textContent =
+            Number(latest.bmp280_temperature_c).toFixed(2);
+
+        $("pressure").textContent =
+            Number(latest.bmp280_pressure_hpa).toFixed(2);
+    }
+
+    function updateCharts(readings) {
+        const labels = readings.map((r) =>
+            new Date(r.timestamp).toLocaleTimeString()
+        );
+
+        temperatureChart.data.labels = labels;
+        temperatureChart.data.datasets[0].data =
+            readings.map((r) => r.aht20_temperature_c);
+        temperatureChart.data.datasets[1].data =
+            readings.map((r) => r.bmp280_temperature_c);
+        temperatureChart.update("none");
+
+        humidityChart.data.labels = labels;
+        humidityChart.data.datasets[0].data =
+            readings.map((r) => r.aht20_humidity_percent);
+        humidityChart.update("none");
+
+        pressureChart.data.labels = labels;
+        pressureChart.data.datasets[0].data =
+            readings.map((r) => r.bmp280_pressure_hpa);
+        pressureChart.update("none");
+    }
+
+    async function refreshDashboard() {
+        try {
+            const hours = $("history-range").value;
+
+            const response = await fetch(
+                "/api/history?hours=" + encodeURIComponent(hours),
+                { cache: "no-store" }
+            );
+
+            if (!response.ok) {
+                throw new Error("HTTP " + response.status);
+            }
+
+            const result = await response.json();
+            const readings = result.readings;
+
+            updateCharts(readings);
+
+            const latest = readings.length
+                ? readings[readings.length - 1]
+                : null;
+
+            updateCards(latest);
+
+            if (latest) {
+                const ageSeconds = Math.max(
+                    0,
+                    Math.floor(
+                        (Date.now() - new Date(latest.timestamp).getTime())
+                        / 1000
+                    )
+                );
+
+                const state = ageSeconds > 20 ? "stale" : "online";
+
+                setStatus({
+                    state: state,
+                    message: state === "online"
+                        ? "Receiving recent sensor readings"
+                        : "No recent sensor readings",
+                    age_seconds: ageSeconds
+                });
+
+                $("last-updated").textContent =
+                    "Latest sensor timestamp: " +
+                    formatTimestamp(latest.timestamp);
+            } else {
+                setStatus({
+                    state: "no-data",
+                    message: "No readings in the selected period",
+                    age_seconds: null
+                });
+
+                $("last-updated").textContent =
+                    "No sensor readings found for this period.";
+            }
+
+            $("error-message").textContent = "";
+
+        } catch (error) {
+            $("error-message").textContent =
+                "Unable to load sensor data: " + error.message;
+
+            setStatus({
+                state: "error",
+                message: "Dashboard data unavailable",
+                age_seconds: null
+            });
+        }
+    }
+
+    $("history-range").addEventListener(
+        "change",
+        refreshDashboard
+    );
+
+    refreshDashboard();
+    setInterval(refreshDashboard, 5000);
+</script>
+</body>
+</html>
