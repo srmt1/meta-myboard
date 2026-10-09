@@ -18,8 +18,7 @@ MQTT_PASSWORD = "YOUR_PASSWORD"
 
 MQTT_TOPIC = "sensors/environment"
 
-#DATABASE = "/var/lib/sensor-logger/sensors.db"
-DATABASE = "/home/steve/sensor-logger/sensors.db"
+DATABASE = "/var/lib/sensor-logger/sensors.db"
 running = True
 
 

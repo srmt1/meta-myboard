@@ -49,6 +49,25 @@ BMP280 pressure/temperature sensor
      systemd
 ```
 
+The latest development also includes MQTT broker connection over ethernet, SQLite databases and a flask browser dashboard. 
+
+``` text
+AHT20 (I²C 0x38) ─┐
+                  ├─ I²C bus 1 → Device Tree overlays → Linux drivers → IIO sysfs
+BMP280 (I²C 0x77) ┘                                                   │
+                                                                     ▼
+                                                         sensor-monitor (C)
+                                                                     │
+                                                        MQTT / TCP port 1883
+                                                                     ▼
+Ubuntu host: Mosquitto → Python logger → SQLite → Flask dashboard → browser
+                     └→ MQTT subscribers and commands
+```
+
+Development network example: Ubuntu Ethernet `enp3s0` = `10.42.0.1/24`;
+Pi `eth0` = `10.42.0.181/24` (DHCP address observed); broker
+`10.42.0.1:1883`. Replace these with actual addresses on your network.
+
 The project covers:
 
 - Yocto image construction
@@ -267,6 +286,10 @@ meta-myboard/
 │       │   └── sensor-monitor.conf
 │       └── ...
 │
+├── host-tools/
+│   ├── sensor-logger/{sensor_logger.py,requirements.txt,README.md}
+│   └── sensor-dashboard/{dashboard.py,requirements.txt,README.md,templates/index.html}
+├── test-results/
 └── README.md
 ```
 
@@ -1627,6 +1650,283 @@ sensor-monitor
 ```
 
 combines both IIO devices into a continuously running application.
+
+## Build-host setup
+
+If the repositories already exist, retain the existing checkout and
+verify its revision rather than cloning over it.
+
+``` bash
+mkdir -p ~/yocto
+cd ~/yocto
+git clone https://git.yoctoproject.org/poky
+git clone https://github.com/raspberrypi/meta-raspberrypi.git
+git clone https://github.com/openembedded/meta-openembedded.git
+git clone https://github.com/srmt1/meta-myboard.git
+cd ~/yocto/poky
+source oe-init-build-env ~/yocto/poky/build
+bitbake-layers show-layers
+```
+
+Use mutually compatible Scarthgap revisions and add these layers in
+`conf/bblayers.conf`: Poky `meta`, `meta-poky`, `meta-yocto-bsp`;
+OpenEmbedded `meta-oe`, `meta-python`, `meta-networking`;
+`meta-raspberrypi`; and `meta-myboard`.
+
+In `conf/local.conf`, configure the machine and image packages as above,
+plus:
+
+``` bitbake
+RPI_EXTRA_CONFIG:append = "\\ndtoverlay=bmp280\\n"
+IMAGE_BOOT_FILES:append = " bmp280.dtbo;overlays/bmp280.dtbo"
+RPI_EXTRA_CONFIG:append = "\\ndtoverlay=aht20\\n"
+IMAGE_BOOT_FILES:append = " aht20.dtbo;overlays/aht20.dtbo"
+```
+
+Build:
+
+``` bash
+cd ~/yocto/poky
+source oe-init-build-env ~/yocto/poky/build
+bitbake core-image-minimal
+ls -lh tmp/deploy/images/raspberrypi/
+```
+
+Flash the correct generated image from `tmp/deploy/images/raspberrypi/`
+to the microSD card. Confirm the image filename and target device before
+writing.
+
+## Raspberry Pi setup and tests
+
+Substitute the current Pi IP address:
+
+``` bash
+ping -c 4 10.42.0.181
+ssh root@10.42.0.181
+```
+
+On the Pi:
+
+``` bash
+ls -l /dev/i2c-*
+i2cdetect -y 1
+for d in /sys/bus/iio/devices/iio:device*; do
+    [ -d "$d" ] || continue
+    printf '%s: ' "$d"
+    cat "$d/name"
+done
+dmesg | grep -Ei 'aht20|bmp280|i2c'
+lsmod | grep -E 'aht20|bmp280'
+systemctl status sensor-monitor
+journalctl -u sensor-monitor -f
+cat /etc/sensor-monitor.conf
+```
+
+Expected addresses are `38` and `77`; `UU` in `i2cdetect` means a kernel
+driver has claimed the address. IIO numbering can vary, so applications
+discover sensors by their `name`.
+
+Example `/etc/sensor-monitor.conf` (replace the placeholder locally):
+
+``` ini
+INTERVAL_SECONDS=5
+MQTT_BROKER=10.42.0.1
+MQTT_PORT=1883
+MQTT_USERNAME=sensorpi
+MQTT_PASSWORD=REPLACE_WITH_YOUR_PASSWORD
+MQTT_TOPIC=sensors/environment
+MQTT_COMMAND_TOPIC=sensors/command
+```
+
+## Ubuntu MQTT broker setup
+
+Install Mosquitto:
+
+``` bash
+sudo apt update
+sudo apt install mosquitto mosquitto-clients
+ip -4 addr show enp3s0
+```
+
+Create an authenticated broker user:
+
+``` bash
+sudo mosquitto_passwd -c /etc/mosquitto/passwd sensorpi
+sudo nano /etc/mosquitto/conf.d/sensor.conf
+```
+
+Example `/etc/mosquitto/conf.d/sensor.conf`:
+
+``` text
+listener 1883 10.42.0.1
+allow_anonymous false
+password_file /etc/mosquitto/passwd
+```
+
+Then:
+
+``` bash
+sudo chown root:mosquitto /etc/mosquitto/passwd
+sudo chmod 640 /etc/mosquitto/passwd
+sudo systemctl restart mosquitto
+sudo systemctl status mosquitto
+sudo ss -ltnp | grep 1883
+```
+
+Change the listener IP to match the host. Restrict firewall access to
+trusted clients. The development setup used non-TLS MQTT on a direct
+network; use TLS on untrusted networks.
+
+Local broker smoke test --- terminal 1:
+
+``` bash
+mosquitto_sub -h localhost -t test/message -v
+```
+
+Terminal 2:
+
+``` bash
+mosquitto_pub -h localhost -t test/message -m "Hello from Ubuntu"
+```
+
+Pi-to-host test --- run this on Ubuntu:
+
+``` bash
+mosquitto_sub -h 10.42.0.1 -p 1883 \\
+  -u sensorpi -P 'REPLACE_WITH_YOUR_PASSWORD' -t test/pi -v
+```
+
+Then on the Pi:
+
+``` bash
+mosquitto_pub -h 10.42.0.1 -p 1883 \\
+  -u sensorpi -P 'REPLACE_WITH_YOUR_PASSWORD' \\
+  -t test/pi -m "Hello from Raspberry Pi"
+```
+
+Use a placeholder in documentation; avoid putting real passwords in
+shell history or visible process arguments.
+
+## MQTT topics, payload and commands
+
+  -----------------------------------------------------------------------
+  Topic                   Direction               Purpose
+  ----------------------- ----------------------- -----------------------
+  `sensors/environment`   Pi → host               JSON sensor readings;
+                                                  retained telemetry
+
+  `sensors/status`        Pi → host               Retained `online` /
+                                                  `offline`; offline
+                                                  configured as Last Will
+
+  `sensors/command`       Host → Pi               Commands such as
+                                                  sampling-interval
+                                                  changes; publish
+                                                  without retain
+  -----------------------------------------------------------------------
+
+Subscribe to telemetry on Ubuntu:
+
+``` bash
+mosquitto_sub -h 10.42.0.1 -p 1883 \\
+  -u sensorpi -P 'REPLACE_WITH_YOUR_PASSWORD' \\
+  -t sensors/environment -v
+```
+
+Example recorded payload:
+
+``` json
+{
+  "timestamp": "2026-10-08T20:36:56Z",
+  "aht20": {"temperature_c": 18.82, "humidity_percent": 78.45},
+  "bmp280": {"temperature_c": 19.69, "pressure_hpa": 1014.92}
+}
+```
+
+Subscribe to status:
+
+``` bash
+mosquitto_sub -h 10.42.0.1 -p 1883 \\
+  -u sensorpi -P 'REPLACE_WITH_YOUR_PASSWORD' \\
+  -t sensors/status -v
+```
+
+The monitor publishes retained `online` on connection. It publishes
+`offline` during normal shutdown; the broker publishes the retained Last
+Will if the client disconnects unexpectedly.
+
+Change sampling interval to ten seconds:
+
+``` bash
+mosquitto_pub -h 10.42.0.1 -p 1883 \\
+  -u sensorpi -P 'REPLACE_WITH_YOUR_PASSWORD' \\
+  -t sensors/command -m "interval 10"
+```
+
+Valid interval range: 1--3600 seconds. Telemetry should then appear
+approximately every ten seconds. Publish commands without retain so old
+commands are not replayed after reconnect.
+
+Broker logs:
+
+``` bash
+sudo journalctl -u mosquitto -f
+```
+
+## SQLite logger and web dashboard
+
+The host logger subscribes to `sensors/environment` and stores readings
+in SQLite. It was initially tested from `~/sensor-logger/`; if committed
+under `host-tools/`, use those repository paths instead.
+
+Start logger:
+
+``` bash
+cd ~/sensor-logger
+python3 sensor_logger.py
+```
+
+Development database:
+
+``` text
+../sensor-logger/sensors.db
+```
+
+Inspect tables:
+
+``` bash
+sqlite3 ~/sensor-logger/sensors.db '.tables'
+```
+
+Start dashboard:
+
+``` bash
+cd ~/sensor-logger
+python3 dashboard.py
+```
+
+Open `http://127.0.0.1:5000` in the browser. The tested dashboard showed
+current readings, history up to seven days, charts and a stale-data
+warning. Chart.js was loaded from a CDN, so charts need browser internet
+access in this version. Do not expose Flask's development server
+directly to the public internet.
+
+## End-to-end test checklist
+
+1.  Ping the Pi from Ubuntu.
+2.  Verify `i2cdetect -y 1` shows sensor addresses `38` and `77` (or
+    `UU` if claimed).
+3.  Verify IIO names and monitor service on the Pi.
+4.  Verify Mosquitto is running on Ubuntu.
+5.  Subscribe to `sensors/environment`; check both sensors appear in
+    JSON.
+6.  Subscribe to `sensors/status`; check online/offline transitions.
+7.  Publish `interval 10`; verify timestamps are about ten seconds
+    apart.
+8.  Start logger and confirm it reports stored measurements.
+9.  Check SQLite tables and rows.
+10. Open the dashboard and confirm current/historical readings.
+11. Restart the monitor or interrupt the network and check recovery.
 
 ---
 
